@@ -4,10 +4,10 @@
 Python --version > 3.8
 
 # Qt for GUI
-PyQt5==5.15.2
+PyQt5
 
 # OpenAI for API interaction
-openai==0.10.2
+openai
 
 # For data processing and handling
 pandas==1.2.3
@@ -18,3 +18,6 @@ nltk==3.5
 
 # For reading Word files
 python-docx==0.8.10
+
+docx2txt
+urllib3==1.26.15

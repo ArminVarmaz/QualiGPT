@@ -4,16 +4,27 @@
 # In[1]:
 
 
-# QualiGPT-v0.1.0-alpha Created by: @He Albert Zhang 
+# QualiGPT-v0.1.0-alpha Created by: @He Albert Zhang
+# 23.02.2024 - added functionality due to new API of OpenAI
+#            - changed the text of the propmt for the social media post (it is not an interview)
 
 import sys
 import pandas as pd
 import openai
+from API_KEY import OPENAI_API_KEY
+
+# import API KEY from file API_KEY.py
+openai.api_key = OPENAI_API_KEY
+from openai import OpenAI
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
 import traceback
 import nltk
 from docx import Document
 from nltk.tokenize import sent_tokenize
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QFileDialog, QTextEdit, QFormLayout, QComboBox, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, \
+    QFileDialog, QTextEdit, QFormLayout, QComboBox, QMessageBox
 from PyQt5.QtGui import QTextCursor
 from PyQt5.QtWidgets import QCheckBox
 from PyQt5.QtWidgets import QRadioButton, QButtonGroup, QSpinBox
@@ -21,6 +32,7 @@ import re
 import csv
 import docx2txt
 from nltk.tokenize import sent_tokenize, word_tokenize
+
 
 class QualiGPTApp(QMainWindow):
 
@@ -30,15 +42,15 @@ class QualiGPTApp(QMainWindow):
         # Initialize the API connection flag
         self.connected_to_api = False
         self.TESTING = False
-        
+
         self.current_dataset = None  # Add this line
         self.dataset_segments = []
         self.saved_segments = []
-        self.all_responses = [] # Used to store all responses
+        self.all_responses = []  # Used to store all responses
 
         # Initialize prompts dictionary
         self.prompts = {
-                "Interview": "You need to analyze an dataset of interviews. \
+            "Interview": "You need to analyze an dataset of interviews. \
                 \nPlease identify the top {num_themes} key themes from the interview and organize the results in a structured table format. \
                 \nThe table should includes these items:\
                 \n- 'Theme': Represents the main idea or topic identified from the interview.\
@@ -67,18 +79,14 @@ class QualiGPTApp(QMainWindow):
                 \nEach subsequent row should represent a theme and its details, with columns separated by '|'.\
                 \nEnsure each row of the table represents a distinct theme and its associated details.",
             "Social Media Posts": "You need to analyze an dataset of Social Media Posts. \
-                \nPlease identify the top {num_themes} key themes from the interview and organize the results in a structured table format. \
-                \nThe table should includes these items:\
-                \n- 'Theme': Represents the main idea or topic identified from the interview.\
+                \nPlease identify the top {num_themes} key themes from the Social Media Posts and organize the results in a structured table format. \
+                \n The table should includes these items:\
+                \n- 'Theme': Represents the main idea or topic identified from the Social Media Posts.\
                 \n- 'Description': Provides a brief explanation or summary of the theme.\
-                \n- 'Quotes': Contains direct quotations from participants that support the identified theme.\
+                \n- 'Quotes': Contains samples of direct quotations from participants that support the identified theme. \
                 \n- 'Participant Count': Indicates the number of participants who mentioned or alluded to the theme.\
-                \nThe table should be formatted as follows: \
-                \nEach column should be separated by a '|' symbol, and there should be no extra '|' symbols within the data. Each row should end with '---'. \
-                \nThe whole table should start with '**********' and end with '**********'.\
-                \nColumns: | 'Theme' | 'Description' | 'Quotes' | 'Participant Count' |. \
                 \nEnsure each row of the table represents a distinct theme and its associated details."
-            }
+        }
 
         # Initialize window
         self.setWindowTitle("QualiGPT: Qualitative Data Analysis Tool")
@@ -87,7 +95,7 @@ class QualiGPTApp(QMainWindow):
         # Initialize central widget
         self.central_widget = QWidget()
         self.layout = QVBoxLayout(self.central_widget)
-        
+
         # Initialize elements
         self.init_elements()
 
@@ -102,7 +110,7 @@ class QualiGPTApp(QMainWindow):
         self.api_key_input = QLineEdit(self)
         self.api_key_input.setEchoMode(QLineEdit.Password)  # Set to Password mode so that the input will appear as ****
         self.layout.addWidget(self.api_key_input)
-        
+
         # Connect to OpenAI API Button
         self.connect_button = QPushButton("Connect with OpenAI")
         self.connect_button.clicked.connect(self.test_api_key)
@@ -116,7 +124,7 @@ class QualiGPTApp(QMainWindow):
         self.import_button = QPushButton("Import Word, CSV or Excel File")
         self.import_button.clicked.connect(self.get_file)
         self.layout.addWidget(self.import_button)
-        
+
         # Submit dataset to ChatGPT API Button
         self.submit_dataset_button = QPushButton("Submit Dataset")
         self.submit_dataset_button.clicked.connect(self.submit_dataset)
@@ -134,11 +142,11 @@ class QualiGPTApp(QMainWindow):
         # Display data area
         self.text_area = QTextEdit()
         self.layout.addWidget(self.text_area)
-        
+
         # Role playing option
         self.role_playing_checkbox = QCheckBox("Enable Role Playing")
         self.layout.addWidget(self.role_playing_checkbox)
-        
+
         # Data type selection
         self.data_type_label = QLabel("Select Data Type:")
         self.layout.addWidget(self.data_type_label)
@@ -147,8 +155,8 @@ class QualiGPTApp(QMainWindow):
         self.interview_radio = QRadioButton("Interview")
         self.focus_group_radio = QRadioButton("Focus Group")
         self.social_media_radio = QRadioButton("Social Media Posts")
-        
-         # 将单选框添加到布局中
+
+        # 将单选框添加到布局中
         self.layout.addWidget(self.interview_radio)
         self.layout.addWidget(self.focus_group_radio)
         self.layout.addWidget(self.social_media_radio)
@@ -158,16 +166,16 @@ class QualiGPTApp(QMainWindow):
         self.data_type_group.addButton(self.interview_radio)
         self.data_type_group.addButton(self.focus_group_radio)
         self.data_type_group.addButton(self.social_media_radio)
-        
+
         # 连接信号和槽
         self.interview_radio.toggled.connect(self.update_preset_prompts)
         self.focus_group_radio.toggled.connect(self.update_preset_prompts)
         self.social_media_radio.toggled.connect(self.update_preset_prompts)
-        
+
         # Number of key themes selection
         self.key_themes_label = QLabel("Select Number of Key Themes:")
         self.layout.addWidget(self.key_themes_label)
-        
+
         self.key_themes_spinbox = QSpinBox(self)
         self.key_themes_spinbox.setMinimum(1)
         self.key_themes_spinbox.setMaximum(20)  # You can adjust this maximum value as needed
@@ -178,7 +186,6 @@ class QualiGPTApp(QMainWindow):
         self.preset_prompts = QComboBox()
         self.update_preset_prompts()
         self.layout.addWidget(self.preset_prompts)
-    
 
         # Custom prompt entry
         self.custom_prompt_entry = QLineEdit()
@@ -189,13 +196,13 @@ class QualiGPTApp(QMainWindow):
         self.chatgpt_button = QPushButton("Submit Prompt and Call ChatGPT API")
         self.chatgpt_button.clicked.connect(self.call_chatgpt)
         self.layout.addWidget(self.chatgpt_button)
-        
+
         # 添加保存按钮
         self.save_button = QPushButton("Save Analysis Result")
         self.save_button.clicked.connect(self.save_result)
         self.layout.addWidget(self.save_button)
-        
-        #save to csv
+
+        # save to csv
         self.export_btn = QPushButton("Export to CSV")
         self.export_btn.clicked.connect(self.export_to_csv)
         self.layout.addWidget(self.export_btn)
@@ -204,11 +211,11 @@ class QualiGPTApp(QMainWindow):
         self.load_button = QPushButton("Load Analysis Result")
         self.load_button.clicked.connect(self.load_result)
         self.layout.addWidget(self.load_button)
-        
+
     def update_preset_prompts(self):
-        #current_data_type = self.data_type_selection.currentText()
-            
-         # Use the QRadioButton's isChecked() method to check which box is checked.
+        # current_data_type = self.data_type_selection.currentText()
+
+        # Use the QRadioButton's isChecked() method to check which box is checked.
         if self.interview_radio.isChecked():
             current_data_type = "Interview"
         elif self.focus_group_radio.isChecked():
@@ -217,26 +224,23 @@ class QualiGPTApp(QMainWindow):
             current_data_type = "Social Media Posts"
         else:
             current_data_type = ""
-    
+
         self.preset_prompts.clear()
         if current_data_type in self.prompts:
             self.preset_prompts.addItem(self.prompts[current_data_type])
-        
+
     def test_api_key(self):
         api_key = self.api_key_input.text()
         if api_key == "albert":
             api_key = "copy-right by He (Albert) Zhang "
-            #this application belongs to He (Albert) Zhang - hpz5211@psu.edu
-        openai.api_key = api_key
+            # this application belongs to He (Albert) Zhang - hpz5211@psu.edu
         try:
             # Simple test call to OpenAI
-            openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": "test"},
-                ]
-            )
+            client.chat.completions.create(model="gpt-3.5-turbo",
+                                           messages=[
+                                               {"role": "system", "content": "You are a helpful assistant."},
+                                               {"role": "user", "content": "test"},
+                                           ])
             self.api_status_label.setText("API Connection: Connected")
             self.connected_to_api = True
             self.TESTING = False
@@ -248,14 +252,14 @@ class QualiGPTApp(QMainWindow):
             self.TESTING = True
             QMessageBox.critical(self, "Error", "API Key is invalid. You are now in Testing mode.")
 
-
     def get_file(self):
         if not self.connected_to_api and not self.TESTING:
             QMessageBox.warning(self, "Warning", "Please connect to the OpenAI API first.")
             return
 
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Word, CSV or Excel File", "", "CSV Files (*.csv);;Excel Files (*.xlsx);;Word Files (*.docx)")
-        
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Word, CSV or Excel File", "",
+                                                   "CSV Files (*.csv);;Excel Files (*.xlsx);;Word Files (*.docx)")
+
         if not file_path:  # User might have cancelled the file dialog
             return
 
@@ -282,14 +286,14 @@ class QualiGPTApp(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Warning", f"Unrecognized file format or encoding issue: {str(e)}")
                 return
-        
+
         if 'data' in locals():
             self.headers = list(data.columns)
             self.data_content = '\n'.join(data.apply(lambda row: ' '.join(row.astype(str)), axis=1))
         else:
             QMessageBox.warning(self, "Warning", "Unable to process the selected file.")
             return
-        
+
         self.headers = list(data.columns)
         self.data_content = '\n'.join(data.apply(lambda row: ' '.join(row.astype(str)), axis=1))
 
@@ -325,41 +329,41 @@ class QualiGPTApp(QMainWindow):
 
     def call_chatgpt(self):
         api_key = self.api_key_input.text()
-    
+
         if not self.connected_to_api and not self.TESTING:
             QMessageBox.warning(self, "Warning", "Please connect to the OpenAI API first.")
             return
-    
+
         num_themes = self.key_themes_spinbox.value()
         prompt = self.custom_prompt_entry.text().strip()
         if not prompt:
             prompt = self.preset_prompts.currentText().format(num_themes=num_themes)
-    
+
         # Combine the dataset and the prompt into a single message
-        #combined_message = self.data_content + "\n\n" + prompt
+        # combined_message = self.data_content + "\n\n" + prompt
         if len(self.dataset_segments) > 1:
-            
+
             for segment in self.saved_segments:
-            # Construct the full prompt for this segment
+                # Construct the full prompt for this segment
                 combined_message = segment + "\n\n" + prompt  # Use the same prompt for each segment
                 # Display the prompt being sent to the API
                 self.display_prompt(combined_message)
                 # Send the segment to the API
                 try:
-                    response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
+                    response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[
                         {"role": "system", "content": "You are a helpful assistant."},
                         {"role": "user", "content": combined_message}
                     ])
-                    response_content = response['choices'][0]['message']['content']
-                    self.all_responses.append(response_content) # save the response
-                    
+                    response_content = response.choices[0].message.content
+                    self.all_responses.append(response_content)  # save the response
+
                     # Check if the response is close to the token limit
-                    if len(response_content.split()) > 4000:  # This is an arbitrary number, adjust as needed
+                    if len(response_content.split()) > 3000:  # This is an arbitrary number, adjust as needed
                         QMessageBox.warning(self, "Warning", "The response might be truncated due to token limits.")
-                    
+
                     self.text_area.moveCursor(QTextCursor.End)
                     self.text_area.append("Response:\n" + response_content)
-                except openai.error.OpenAIError as e:
+                except openai.OpenAIError as e:
                     print(f"OpenAI Error: {str(e)}")
                     QMessageBox.critical(self, "Error", f"Failed to call ChatGPT API. OpenAI Error: {str(e)}")
                 except Exception as e:
@@ -372,32 +376,32 @@ class QualiGPTApp(QMainWindow):
             combined_message = self.data_content + "\n\n" + prompt
             # Display the prompt being sent to the API
             self.display_prompt(combined_message)
-             # Send the segment to the API
+            # Send the segment to the API
             try:
-                response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
+                response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": combined_message}
                 ])
-                response_content = response['choices'][0]['message']['content']
-                self.all_responses.append(response_content) # save the response
-                
+                response_content = response.choices[0].message.content
+                self.all_responses.append(response_content)  # save the response
+
                 # Check if the response is close to the token limit
-                if len(response_content.split()) > 4000:  # This is an arbitrary number, adjust as needed
+                if len(response_content.split()) > 3000:  # This is an arbitrary number, adjust as needed
                     QMessageBox.warning(self, "Warning", "The response might be truncated due to token limits.")
-                
+
                 self.text_area.moveCursor(QTextCursor.End)
                 self.text_area.append("Response:\n" + response_content)
-            except openai.error.OpenAIError as e:
+            except openai.OpenAIError as e:
                 print(f"OpenAI Error: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to call ChatGPT API. OpenAI Error: {str(e)}")
             except Exception as e:
                 print(f"Other Error: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to call ChatGPT API. Other Error: {str(e)}")
-                
+
     def display_prompt(self, prompt):
         self.text_area.moveCursor(QTextCursor.End)
         self.text_area.append("Prompt Sent to API:\n" + prompt + "\n\n")
-        
+
     def analyze_merged_responses(self, merged_responses):
         # Construct a new prompt for the merged responses
         new_prompt = "This is the result of a thematic analysis of several parts of the dataset. Now, summarize the same themes to generate a new table. \
@@ -418,34 +422,35 @@ class QualiGPTApp(QMainWindow):
 \nAnalyze the following merged responses: " + merged_responses
         self.display_prompt(new_prompt)
         try:
-            response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
+            response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": new_prompt}
             ])
-            response_content = response['choices'][0]['message']['content']
-            
+            response_content = response.choices[0].message.content
+
             # Display the final analysis
             self.text_area.moveCursor(QTextCursor.End)
             self.text_area.append("Final Analysis:\n" + response_content)
-        except openai.error.OpenAIError as e:
+        except openai.OpenAIError as e:
             print(f"OpenAI Error: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to analyze merged responses. OpenAI Error: {str(e)}")
         except Exception as e:
             print(f"Other Error: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to analyze merged responses. Other Error: {str(e)}")
-   
+
     def submit_dataset(self):
         # 检查是否已经连接到OpenAI API
         if not self.connected_to_api and not self.TESTING:
             QMessageBox.warning(self, "Warning", "Please connect to the OpenAI API first.")
             return
-       
+
         print("Data Content:", self.data_content[:500])  # Print the first 500 characters of the dataset for debugging
         print("Number of Segments:", len(self.dataset_segments))
 
-         # 如果数据内容超过4096 tokens
+        # 如果数据内容超过4096 tokens
         if len(self.data_content) > 4096:
-            self.dataset_segments = self.split_into_segments(self.data_content, 4096 - 1500)  # Reserve some tokens for additional prompts
+            self.dataset_segments = self.split_into_segments(self.data_content,
+                                                             4096 - 1500)  # Reserve some tokens for additional prompts
             # 不要在这里提交分段，只是保存它们
             self.saved_segments = self.dataset_segments
             QMessageBox.information(self, "Success", "Dataset has been segmented and is ready for analysis.")
@@ -457,7 +462,8 @@ class QualiGPTApp(QMainWindow):
 
     def save_result(self):
         # 获取保存路径
-        save_path, _ = QFileDialog.getSaveFileName(self, "Save Analysis Result", "", "Text Files (*.txt);;CSV Files (*.csv)")
+        save_path, _ = QFileDialog.getSaveFileName(self, "Save Analysis Result", "",
+                                                   "Text Files (*.txt);;CSV Files (*.csv)")
         if save_path:
             with open(save_path, "w") as f:
                 f.write(self.text_area.toPlainText())
@@ -474,31 +480,33 @@ class QualiGPTApp(QMainWindow):
             response_content = ""
         # Print the entire response for debugging
         print("Full Response:\n", response_content)
-        
+
         # Parse the response content
         parsed_data = self.parse_response_to_csv(response_content)
-        
+
         # Diagnostic print statements
         print("Parsed Data:", parsed_data)
         print("Length of Parsed Data:", len(parsed_data))
-        
+
         # Check if parsed_data is empty
         if not parsed_data:
-            QMessageBox.critical(self, "Error", "Failed to parse the data. Please ensure the response is in the expected format.")
+            QMessageBox.critical(self, "Error",
+                                 "Failed to parse the data. Please ensure the response is in the expected format.")
             return
-        
+
         # Check for mismatched column counts
         expected_columns = 4
         mismatched_rows = [index for index, row in enumerate(parsed_data, start=1) if len(row) != expected_columns]
-        
+
         if mismatched_rows:
             # Print the mismatched rows for debugging
             for index in mismatched_rows:
-                print(f"Row {index}: {parsed_data[index-1]}")  # index-1 because mismatched_rows starts from 1
-            
-            QMessageBox.critical(self, "Error", f"Data mismatch. Expected {expected_columns} columns but found different column counts in rows: {', '.join(map(str, mismatched_rows))}. Please review the data.")
+                print(f"Row {index}: {parsed_data[index - 1]}")  # index-1 because mismatched_rows starts from 1
+
+            QMessageBox.critical(self, "Error",
+                                 f"Data mismatch. Expected {expected_columns} columns but found different column counts in rows: {', '.join(map(str, mismatched_rows))}. Please review the data.")
             return
-    
+
         # Assuming the first row contains column headers
         df = pd.DataFrame(parsed_data[1:], columns=parsed_data[0])
 
@@ -507,36 +515,41 @@ class QualiGPTApp(QMainWindow):
 
         if save_path:
             df.to_csv(save_path, index=False)  # Ensure not to save row indices
+
     def submit_next_segment(self):
         if self.current_segment_index < len(self.segments):
             segment = self.segments[self.current_segment_index]
             interim_prompt = segment + "\n(Note: This dataset has more content following this segment.)"
             try:
-                response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
+                response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": interim_prompt}
                 ])
-                self.responses.append(response['choices'][0]['message']['content'])
+                self.responses.append(response.choices[0].message.content)
                 self.current_segment_index += 1
                 if self.current_segment_index < len(self.segments):
-                    QMessageBox.information(self, "Progress", f"Segment {self.current_segment_index} out of {len(self.segments)} has been submitted. Please submit the next segment.")
+                    QMessageBox.information(self, "Progress",
+                                            f"Segment {self.current_segment_index} out of {len(self.segments)} has been submitted. Please submit the next segment.")
                 else:
-                    QMessageBox.information(self, "Success", "All segments have been successfully submitted to the API.")
-            except openai.error.OpenAIError as e:
+                    QMessageBox.information(self, "Success",
+                                            "All segments have been successfully submitted to the API.")
+            except openai.OpenAIError as e:
                 print(f"OpenAI Error: {str(e)}")
-                QMessageBox.critical(self, "Error", f"Failed to submit dataset segment to ChatGPT API. OpenAI Error: {str(e)}")
+                QMessageBox.critical(self, "Error",
+                                     f"Failed to submit dataset segment to ChatGPT API. OpenAI Error: {str(e)}")
             except Exception as e:
                 print(f"Other Error: {str(e)}")
-                QMessageBox.critical(self, "Error", f"Failed to submit dataset segment to ChatGPT API. Other Error: {str(e)}")
-
+                QMessageBox.critical(self, "Error",
+                                     f"Failed to submit dataset segment to ChatGPT API. Other Error: {str(e)}")
 
     def load_result(self):
         # 获取加载路径
-        load_path, _ = QFileDialog.getOpenFileName(self, "Load Analysis Result", "", "Text Files (*.txt);;CSV Files (*.csv)")
+        load_path, _ = QFileDialog.getOpenFileName(self, "Load Analysis Result", "",
+                                                   "Text Files (*.txt);;CSV Files (*.csv)")
         if load_path:
             with open(load_path, "r") as f:
                 self.text_area.setText(f.read())
-    
+
     def parse_response_to_csv(self, response):
         # Split the response into lines
         lines = response.strip().split("\n")
@@ -552,23 +565,25 @@ class QualiGPTApp(QMainWindow):
         start_index, end_index = delimiter_indices[0], delimiter_indices[-1]
 
         # Extract the table content
-        table_content = lines[start_index+1:end_index]
+        table_content = lines[start_index + 1:end_index]
 
         # Split each line into columns based on the '|' character
-        parsed_data = [line.split("|")[1:-1] for line in table_content if line.strip()]  # Exclude the first and last elements
+        parsed_data = [line.split("|")[1:-1] for line in table_content if
+                       line.strip()]  # Exclude the first and last elements
 
         # Remove whitespace from each cell
-        parsed_data = [[cell.strip() for cell in row] for row in parsed_data if len(row) > 1]  # Ensure we don't include rows with only one cell
+        parsed_data = [[cell.strip() for cell in row] for row in parsed_data if
+                       len(row) > 1]  # Ensure we don't include rows with only one cell
 
         return parsed_data
-    
+
     def send_segments_to_chatgpt(self, data_content, prompt):
         # Split the data_content into segments
         segments = self.split_into_segments(data_content, 4096 - 1500)  # Reserve some tokens for additional prompts
-    
+
         # Initialize a list to store responses
         responses = []
-    
+
         # Send each segment to ChatGPT with a continuation prompt
         for i, segment in enumerate(segments):
             # Check if it's the last segment
@@ -578,17 +593,17 @@ class QualiGPTApp(QMainWindow):
             else:
                 # Otherwise, use a continuation prompt
                 current_prompt = "Continuing with the next segment of data..."
-    
+
             messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": current_prompt},
                 {"role": "user", "content": segment}
             ]
-    
+
             try:
-                response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
-                responses.append(response['choices'][0]['message']['content'])
-            except openai.error.OpenAIError as e:
+                response = client.chat.completions.create(model="gpt-3.5-turbo", messages=messages)
+                responses.append(response.choices[0].message.content)
+            except openai.OpenAIError as e:
                 print(f"OpenAI Error: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to call ChatGPT API. OpenAI Error: {str(e)}")
                 return None
@@ -596,12 +611,12 @@ class QualiGPTApp(QMainWindow):
                 print(f"Other Error: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to call ChatGPT API. Other Error: {str(e)}")
                 return None
-    
+
         # Combine all the responses
         combined_response = "\n".join(responses)
         return combined_response
 
-    def split_into_segments(self, text, max_tokens = 3800):
+    def split_into_segments(self, text, max_tokens=2500):
         sentences = sent_tokenize(text)
         segments = []
         segment = ""
@@ -622,11 +637,13 @@ class QualiGPTApp(QMainWindow):
 
         return segments
 
+
 def main():
     app = QApplication(sys.argv)
     window = QualiGPTApp()
     window.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()
